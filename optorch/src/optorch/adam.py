@@ -111,7 +111,7 @@ def adam(
         if config.weight_decay > 0 and config.mode == AdamWDMode.DECOUPLED:
             lr_schedule_value = 1.0
             if config.lr_schedule_value is not None:
-                lr_schedule = config.lr_schedule_value
+                lr_schedule_value = config.lr_schedule_value
 
             param.mul_(1 - config.weight_decay * lr_schedule_value)
 
