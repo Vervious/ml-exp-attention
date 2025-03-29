@@ -32,7 +32,7 @@ with open("README.md", "r", encoding="utf-8") as fh:
 # ninja build does not work unless include_dirs are abs path
 this_dir = os.path.dirname(os.path.abspath(__file__))
 
-PACKAGE_NAME = "flash_sigmoid"
+PACKAGE_NAME = "flash_exp"
 
 BASE_WHEEL_URL = (
     "https://github.com/Dao-AILab/flash-attention/releases/download/{tag_name}/{wheel_name}"
@@ -105,7 +105,7 @@ if not SKIP_CUDA_BUILD:
     if os.path.exists(os.path.join(torch_dir, "include", "ATen", "CUDAGeneratorImpl.h")):
         generator_flag = ["-DOLD_GENERATOR_PATH"]
 
-    check_if_cuda_home_none("flash_sigmoid")
+    check_if_cuda_home_none("flash_exp")
     # Check, if CUDA11 is installed for compute capability 8.0
     cc_flag = []
     if CUDA_HOME is not None:
@@ -131,7 +131,7 @@ if not SKIP_CUDA_BUILD:
         torch._C._GLIBCXX_USE_CXX11_ABI = True
     ext_modules.append(
         CUDAExtension(
-            name="flash_sigmoid_2_cuda",
+            name="flash_exp_2_cuda",
             sources=[
                 "csrc/flash_sigmoid/flash_api.cpp",
                 "csrc/flash_sigmoid/src/flash_fwd_hdim32_fp16_sm80.cu",
@@ -214,7 +214,7 @@ if not SKIP_CUDA_BUILD:
 
 
 def get_package_version():
-    with open(Path(this_dir) / "flash_sigmoid" / "__init__.py", "r") as f:
+    with open(Path(this_dir) / "flash_exp" / "__init__.py", "r") as f:
         version_match = re.search(r"^__version__\s*=\s*(.*)$", f.read(), re.MULTILINE)
     public_version = ast.literal_eval(version_match.group(1))
     local_version = os.environ.get("FLASH_ATTN_LOCAL_VERSION")
@@ -310,6 +310,7 @@ class NinjaBuildExtension(BuildExtension):
 
 setup(
     name=PACKAGE_NAME,
+    package_dir={PACKAGE_NAME: "flash_exp"},
     version=get_package_version(),
     packages=find_packages(
         exclude=(
@@ -320,7 +321,7 @@ setup(
             "dist",
             "docs",
             "benchmarks",
-            "flash_sigmoid.egg-info",
+            "flash_exp.egg-info",
         )
     ),
     author="Tri Dao",

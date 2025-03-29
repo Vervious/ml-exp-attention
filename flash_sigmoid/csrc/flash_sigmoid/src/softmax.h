@@ -136,6 +136,18 @@ __forceinline__ __device__ float fast_tanhf (float a)
     return r;
 }
 
+/*--------------------------------------------------------------------------------
+Compute and return `exp` of given scalar `a`. I'm just coding by pattern matching,
+todo actually learn all the details when I have more time.
+--------------------------------------------------------------------------------*/
+__forceinline__ __device__ float ben_expf (float a)
+{
+    float r;
+    asm("ex2.approx.f32 %0, %1;" : "=f"(r) : "f"(a * 1.442695f));
+    return r;
+}
+
+
 
 /*--------------------------------------------------------------------------------
 Compute element-wise sigmoid of given tensor after scaling it.
@@ -157,6 +169,40 @@ void apply_sigmoid(Tensor<Engine0, Layout0> &tensor, const float scale) {
     #pragma unroll
     for (int mi = 0; mi < size(tensor); ++mi) {
         tensor(mi) = fmaf(0.5, fast_tanhf(tensor(mi) * scale), 0.5f);
+    }
+}
+
+
+template <typename Engine0, typename Layout0>
+__forceinline__ __device__
+void apply_exp(Tensor<Engine0, Layout0> &tensor, const float scale) {
+    #pragma unroll
+    for (int mi = 0; mi < size(tensor); ++mi) {
+        tensor(mi) = ben_expf(tensor(mi) * scale);
+    }
+}
+
+
+template <bool Is_dropout, typename Engine0, typename Layout0, typename Engine1, typename Layout1>
+__forceinline__ __device__
+void apply_exp_backprop(
+    Tensor<Engine0, Layout0> &p,
+    Tensor<Engine1, Layout1> &dp
+) {
+    // Unroll for each row.
+    #pragma unroll
+    for (int mi = 0; mi < size<0>(dp); ++mi) {
+        // Unroll for each column.
+        # pragma unroll
+        for (int ni = 0; ni < size<1>(dp); ++ni) {
+            // Compute the tri-conditional.
+            const float a = p(mi, ni);
+            const float b = dp(mi, ni);
+            const float corrected_b = !Is_dropout || a >= 0 ? b : 0.f;
+
+            // Compute and fill the answer in the second input tensor.
+            dp(mi, ni) = a*corrected_b;
+        }
     }
 }
 

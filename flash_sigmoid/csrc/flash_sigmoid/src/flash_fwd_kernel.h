@@ -33,7 +33,7 @@ inline __device__ void compute_attn_1rowblock(const Params &params, const int bi
 
     const float sigmoid_bias_prescaled = params.sigmoid_bias;
     // Pre-multiply by half to save a float operation at each location.
-    const float half_softmax_scale = params.scale_softmax * 0.5;
+    const float softmax_scale = params.scale_softmax;
 
     // Shared memory.
     extern __shared__ char smem_[];
@@ -308,7 +308,7 @@ inline __device__ void compute_attn_1rowblock(const Params &params, const int bi
 
         // TODO: when we have key_padding_mask we'll need to Check_inf
         // Apply sigmoid
-        flash::apply_sigmoid(/*tensor=*/acc_s, /*scale=*/half_softmax_scale);
+        flash::apply_exp(/*tensor=*/acc_s, /*scale=*/softmax_scale);
 
         // Convert acc_s from fp32 to fp16/bf16
         Tensor rP = flash::convert_type<Element>(acc_s);
@@ -373,7 +373,7 @@ inline __device__ void compute_attn_1rowblock(const Params &params, const int bi
         );
 
         // Apply sigmoid
-        flash::apply_sigmoid(/*tensor=*/acc_s, /*scale=*/half_softmax_scale);
+        flash::apply_exp(/*tensor=*/acc_s, /*scale=*/softmax_scale);
 
         Tensor rP = flash::convert_type<Element>(acc_s);
         int block_row_idx = m_block * (kBlockM / 16) + tidx / 32;
@@ -461,7 +461,7 @@ inline __device__ void compute_attn_1rowblock_splitkv(const Params &params, cons
 
     const float sigmoid_bias_prescaled = params.sigmoid_bias;
     // Pre-multiply by half to save a float operation at each location.
-    const float half_softmax_scale = params.scale_softmax * 0.5;
+    const float softmax_scale = params.scale_softmax;
 
     constexpr int kBlockM = Kernel_traits::kBlockM;
     constexpr int kBlockN = Kernel_traits::kBlockN;
@@ -862,7 +862,7 @@ inline __device__ void compute_attn_1rowblock_splitkv(const Params &params, cons
         }
 
         // We have key_padding_mask so we'll need to Check_inf
-        flash::apply_sigmoid(/*tensor=*/acc_s, /*scale=*/half_softmax_scale);
+        flash::apply_exp(/*tensor=*/acc_s, /*scale=*/softmax_scale);
 
         // Convert acc_s from fp32 to fp16/bf16
         Tensor rP = flash::convert_type<Element>(acc_s);
@@ -927,7 +927,7 @@ inline __device__ void compute_attn_1rowblock_splitkv(const Params &params, cons
         );
 
         // Apply sigmoid.
-        flash::apply_sigmoid(/*tensor=*/acc_s, /*scale=*/half_softmax_scale);
+        flash::apply_exp(/*tensor=*/acc_s, /*scale=*/softmax_scale);
 
         Tensor rP = flash::convert_type<Element>(acc_s);
         // Reshape rP from (MMA=4, MMA_M, MMA_N) to ((4, 2), MMA_M, MMA_N / 2)

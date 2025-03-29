@@ -2,8 +2,8 @@
 
 # Install flash-sigmoid.
 echo "Attempting uninstall + reinstall of flash sigmoid ..."
-pip uninstall -y flash_sigmoid
-cd flash_sigmoid
+pip uninstall -y flash_exp
+cd flash_exp
 
 MAX_JOBS=8 python3 setup.py install  # If you face issues with random deaths turn MAX_JOBS down.
 cd ..

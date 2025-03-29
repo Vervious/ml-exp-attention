@@ -16,8 +16,8 @@ from attention_simulator.layers.position_embedding import apply_rotary_emb
 
 # Attempt to load sigmoid flash sigmoid attention if it exists.
 try:
-    from flash_sigmoid import flash_attn_func as flash_attn_sigmoid_func
-    from flash_sigmoid import flash_attn_qkvpacked_func as flash_attn_sigmoid_qkvpacked_func
+    from flash_exp import flash_attn_func as flash_attn_sigmoid_func
+    from flash_exp import flash_attn_qkvpacked_func as flash_attn_sigmoid_qkvpacked_func
 except ImportError:
     pass
 

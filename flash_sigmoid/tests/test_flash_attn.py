@@ -6,13 +6,13 @@ import pytest
 import torch
 import torch.nn.functional as F
 from einops import rearrange, repeat
-from flash_sigmoid import (
+from flash_exp import (
     flash_attn_func,
     flash_attn_kvpacked_func,
     flash_attn_qkvpacked_func,
     # We do not support varlen and kvcache variants.
 )
-from flash_sigmoid.flash_attn_interface import _get_block_size_n
+from flash_exp.flash_attn_interface import _get_block_size_n
 
 MAX_HEADDIM_SM8x = 192
 

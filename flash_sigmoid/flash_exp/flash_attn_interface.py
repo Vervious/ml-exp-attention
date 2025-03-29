@@ -9,7 +9,7 @@ import numpy as np
 
 # isort: off
 # We need to import the CUDA kernels after importing torch
-import flash_sigmoid_2_cuda as flash_attn_cuda
+import flash_exp_2_cuda as flash_attn_cuda
 
 # isort: on
 

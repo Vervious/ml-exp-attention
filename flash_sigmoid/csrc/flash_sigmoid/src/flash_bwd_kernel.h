@@ -91,7 +91,7 @@ inline __device__ void compute_dq_dk_dv_1colblock(const Params &params, const in
 
     const float sigmoid_bias_prescaled = params.sigmoid_bias;
     // Pre-multiply by half to save a float operation at each location.
-    const float half_softmax_scale = params.scale_softmax * 0.5;
+    const float softmax_scale = params.scale_softmax;
 
     constexpr int kBlockM = Kernel_traits::kBlockM;
     constexpr int kBlockN = Kernel_traits::kBlockN;
@@ -479,7 +479,7 @@ inline __device__ void compute_dq_dk_dv_1colblock(const Params &params, const in
 
         // if (cute::thread(32, 0)) { print(scores); }
         // Compute the sigmoid values.
-        flash::apply_sigmoid(/*tensor=*/scores, /*scale=*/half_softmax_scale);
+        flash::apply_exp(/*tensor=*/scores, /*scale=*/softmax_scale);
 
         if constexpr (Is_dropout) {
             int warp_id = tidx / 32;
@@ -528,7 +528,7 @@ inline __device__ void compute_dq_dk_dv_1colblock(const Params &params, const in
 
         // Reshape acc_dp from (MMA=4, MMA_N, MMA_N) to (col=(2, MMA_N), row=(2, MMA_N))
         Tensor dS = make_tensor(acc_dp.data(), scores.layout());
-        flash::apply_sigmoid_backprop<Is_dropout>(/*p=*/scores, /*dp=*/dS);
+        flash::apply_exp_backprop<Is_dropout>(/*p=*/scores, /*dp=*/dS);
 
         // if (cute::thread0()) { print(dS); }
 
