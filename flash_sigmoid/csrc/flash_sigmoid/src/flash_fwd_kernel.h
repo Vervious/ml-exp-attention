@@ -269,7 +269,11 @@ inline __device__ void compute_attn_1rowblock(const Params &params, const int bi
     #pragma unroll
     for (int masking_step = 0; masking_step < n_masking_steps; ++masking_step, --n_block) {
         Tensor acc_s = partition_fragment_C(tiled_mma, Shape<Int<kBlockM>, Int<kBlockN>>{});  // (MMA=4, MMA_M, MMA_N)
-        fill(acc_s, sigmoid_bias_prescaled);
+        if (params.activation_fn == 2) {
+            clear(acc_s);
+        } else {
+            fill(acc_s, sigmoid_bias_prescaled);            
+        }
         flash::cp_async_wait<0>();
         __syncthreads();
 
@@ -308,7 +312,26 @@ inline __device__ void compute_attn_1rowblock(const Params &params, const int bi
 
         // TODO: when we have key_padding_mask we'll need to Check_inf
         // Apply sigmoid
-        flash::apply_exp(/*tensor=*/acc_s, /*scale=*/softmax_scale);
+        switch (params.activation_fn) {
+            case 0:
+                // Apply sigmoid
+                flash::apply_sigmoid(/*tensor=*/acc_s, /*scale=*/softmax_scale);
+                break;
+            case 1:
+                // Apply exp
+                flash::apply_exp(/*tensor=*/acc_s, /*scale=*/softmax_scale);
+                break;
+            case 2:
+                flash::apply_absexp(/*tensor=*/acc_s, /*scale=*/softmax_scale, /*bias=*/sigmoid_bias_prescaled);
+                break;
+            case 3:
+                flash::apply_powthree(/*tensor=*/acc_s, /*scale=*/softmax_scale);
+                break;
+            default:
+                // Default to sigmoid if not specified
+                flash::apply_sigmoid(/*tensor=*/acc_s, /*scale=*/softmax_scale);
+                break;
+        }
 
         // Convert acc_s from fp32 to fp16/bf16
         Tensor rP = flash::convert_type<Element>(acc_s);
@@ -344,7 +367,11 @@ inline __device__ void compute_attn_1rowblock(const Params &params, const int bi
     // These are the iterations where we don't need masking on S
     for (; n_block >= n_block_min; --n_block) {
         Tensor acc_s = partition_fragment_C(tiled_mma, Shape<Int<kBlockM>, Int<kBlockN>>{});  // (MMA=4, MMA_M, MMA_N)
-        fill(acc_s, sigmoid_bias_prescaled);
+        if (params.activation_fn == 2) {
+            clear(acc_s);
+        } else {
+            fill(acc_s, sigmoid_bias_prescaled);            
+        }
         flash::cp_async_wait<0>();
         __syncthreads();
         // Advance gV
@@ -373,7 +400,26 @@ inline __device__ void compute_attn_1rowblock(const Params &params, const int bi
         );
 
         // Apply sigmoid
-        flash::apply_exp(/*tensor=*/acc_s, /*scale=*/softmax_scale);
+        switch (params.activation_fn) {
+            case 0:
+                // Apply sigmoid
+                flash::apply_sigmoid(/*tensor=*/acc_s, /*scale=*/softmax_scale);
+                break;
+            case 1:
+                // Apply exp
+                flash::apply_exp(/*tensor=*/acc_s, /*scale=*/softmax_scale);
+                break;
+            case 2:
+                flash::apply_absexp(/*tensor=*/acc_s, /*scale=*/softmax_scale, /*bias=*/sigmoid_bias_prescaled);
+                break;
+            case 3:
+                flash::apply_powthree(/*tensor=*/acc_s, /*scale=*/softmax_scale);
+                break;
+            default:
+                // Default to sigmoid if not specified
+                flash::apply_sigmoid(/*tensor=*/acc_s, /*scale=*/softmax_scale);
+                break;
+        }
 
         Tensor rP = flash::convert_type<Element>(acc_s);
         int block_row_idx = m_block * (kBlockM / 16) + tidx / 32;

@@ -329,7 +329,8 @@ mha_fwd(at::Tensor &q,         // batch_size x seqlen_q x num_heads x head_size
         int window_size_right,
         const bool return_softmax,
         c10::optional<at::Generator> gen_,
-        const float sigmoid_bias
+        const float sigmoid_bias,
+        const int activation_fn
 ) {
 
     auto dprops = at::cuda::getCurrentDeviceProperties();
@@ -474,6 +475,7 @@ mha_fwd(at::Tensor &q,         // batch_size x seqlen_q x num_heads x head_size
 
     // Set into params the data required for sigmoid biases.
     set_params_sigmoid_bias(params, sigmoid_bias / softmax_scale);
+    params.activation_fn = activation_fn;
 
     if (seqlen_k > 0) {
         auto stream = at::cuda::getCurrentCUDAStream().stream();
@@ -738,7 +740,8 @@ mha_bwd(const at::Tensor &dout,  // batch_size x seqlen_q x num_heads, x head_si
         const bool deterministic,
         c10::optional<at::Generator> gen_,
         c10::optional<at::Tensor> &rng_state,
-        const float sigmoid_bias
+        const float sigmoid_bias,
+        const int activation_fn
 ) {
 
     #ifdef FLASHATTENTION_DISABLE_BACKWARD
@@ -926,6 +929,7 @@ mha_bwd(const at::Tensor &dout,  // batch_size x seqlen_q x num_heads, x head_si
 
     // Set into params the data required for sigmoid biases.
     set_params_sigmoid_bias(params, sigmoid_bias / softmax_scale);
+    params.activation_fn = activation_fn;
 
     if (seqlen_q > 0) {
         launch(params, stream);

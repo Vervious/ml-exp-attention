@@ -46,7 +46,7 @@ def _get_block_size_n(device, head_dim, is_dropout, is_causal):
 
 
 def _flash_attn_forward(
-    q, k, v, dropout_p, softmax_scale, causal, window_size, alibi_slopes, return_softmax, sigmoid_bias
+    q, k, v, dropout_p, softmax_scale, causal, window_size, alibi_slopes, return_softmax, sigmoid_bias, activation_fn
 ):
     maybe_contiguous = lambda x: x.contiguous() if x.stride(-1) != 1 else x
     q, k, v = [maybe_contiguous(x) for x in (q, k, v)]
@@ -63,7 +63,8 @@ def _flash_attn_forward(
         window_size[1],
         return_softmax,
         None,
-        sigmoid_bias
+        sigmoid_bias,
+        activation_fn
     )
     return out, q, k, v, out_padded, S_dmask, rng_state
 
@@ -84,7 +85,8 @@ def _flash_attn_backward(
     alibi_slopes,
     deterministic,
     rng_state=None,
-    sigmoid_bias=0.
+    sigmoid_bias=0.,
+    activation_fn=0  # 0 for default sigmoid activation
 ):
     maybe_contiguous = lambda x: x.contiguous() if x.stride(-1) != 1 else x
     # dq, dk, dv are allocated by us so they should already be contiguous
@@ -107,7 +109,8 @@ def _flash_attn_backward(
         deterministic,
         None,
         rng_state,
-        sigmoid_bias
+        sigmoid_bias,
+        activation_fn
     )
     return dq, dk, dv,
 
@@ -261,6 +264,7 @@ class FlashAttnFunc(torch.autograd.Function):
         deterministic,
         return_softmax,
         sigmoid_bias,
+        activation_fn
     ):
         if softmax_scale is None:
             softmax_scale = q.shape[-1] ** (-0.5)
@@ -276,6 +280,7 @@ class FlashAttnFunc(torch.autograd.Function):
             alibi_slopes=alibi_slopes,
             return_softmax=return_softmax and dropout_p > 0,
             sigmoid_bias=sigmoid_bias,
+            activation_fn=activation_fn  # Pass the activation function to CUDA kernel
         )
         ctx.save_for_backward(q, k, v, out_padded, rng_state)
         ctx.sigmoid_bias = sigmoid_bias  # Remember sigmoid bias for backward pass.
@@ -285,6 +290,7 @@ class FlashAttnFunc(torch.autograd.Function):
         ctx.window_size = window_size
         ctx.alibi_slopes = alibi_slopes
         ctx.deterministic = deterministic
+        ctx.activation_fn = activation_fn
         return out if not return_softmax else (out, S_dmask)
 
     @staticmethod
@@ -308,11 +314,12 @@ class FlashAttnFunc(torch.autograd.Function):
             ctx.deterministic,
             rng_state=rng_state,
             sigmoid_bias=ctx.sigmoid_bias,  # Recall sigmoid bias in backward pass.
+            activation_fn=ctx.activation_fn  
         )
         dq = dq[..., : dout.shape[-1]]  # We could have padded the head dimension
         dk = dk[..., : dout.shape[-1]]
         dv = dv[..., : dout.shape[-1]]
-        return dq, dk, dv, None, None, None, None, None, None, None, None
+        return dq, dk, dv, None, None, None, None, None, None, None, None, None
 
 
 def flash_attn_qkvpacked_func(
@@ -468,6 +475,7 @@ def flash_attn_func(
     deterministic=False,
     return_attn_probs=False,
     sigmoid_bias=0.,
+    activation_fn=0  # 0 for sigmoid, 1 for exp, 2 for plusminusexp, 3 for x**3, 4 for x**4, etc
 ):
     """dropout_p should be set to 0.0 during evaluation
     Supports multi-query and grouped-query attention (MQA/GQA) by passing in KV with fewer heads
@@ -533,4 +541,5 @@ def flash_attn_func(
         deterministic,
         return_attn_probs,
         np.float32(sigmoid_bias),
+        activation_fn
     )

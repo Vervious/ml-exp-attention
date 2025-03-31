@@ -183,6 +183,38 @@ void apply_exp(Tensor<Engine0, Layout0> &tensor, const float scale) {
 }
 
 
+template <typename Engine0, typename Layout0>
+__forceinline__ __device__
+void apply_absexp(Tensor<Engine0, Layout0> &tensor, const float scale, const float bias) {
+    #pragma unroll
+    for (int mi = 0; mi < size(tensor); ++mi) {
+        if (tensor(mi) == -INFINITY) {
+            tensor(mi) = 0.0f;
+            continue;
+        }
+        float val = ben_expf(fabsf(tensor(mi)) * scale + bias);
+        tensor(mi) = copysignf(val, tensor(mi));
+    }
+}
+
+
+template <typename Engine0, typename Layout0>
+__forceinline__ __device__
+void apply_powthree(Tensor<Engine0, Layout0> &tensor, const float scale) {
+    #pragma unroll
+    for (int mi = 0; mi < size(tensor); ++mi) {
+        if (tensor(mi) == -INFINITY) {
+            tensor(mi) = 0.0f;
+            continue;
+        }
+        float val = tensor(mi) * scale;
+        tensor(mi) = val * val * val;
+    }
+}
+
+
+
+
 template <bool Is_dropout, typename Engine0, typename Layout0, typename Engine1, typename Layout1>
 __forceinline__ __device__
 void apply_exp_backprop(
@@ -202,6 +234,57 @@ void apply_exp_backprop(
 
             // Compute and fill the answer in the second input tensor.
             dp(mi, ni) = a*corrected_b;
+        }
+    }
+}
+
+
+template <bool Is_dropout, typename Engine0, typename Layout0, typename Engine1, typename Layout1>
+__forceinline__ __device__
+void apply_absexp_backprop(
+    Tensor<Engine0, Layout0> &p,
+    Tensor<Engine1, Layout1> &dp
+) {
+    // Unroll for each row.
+    #pragma unroll
+    for (int mi = 0; mi < size<0>(dp); ++mi) {
+        // Unroll for each column.
+        # pragma unroll
+        for (int ni = 0; ni < size<1>(dp); ++ni) {
+            // Compute the tri-conditional.
+            const float a = p(mi, ni);
+            const float b = dp(mi, ni);
+            const float corrected_b = !Is_dropout || a >= -100 ? b : 0.f;
+            const float corrected_a = a >= -100 ? a : 0.f;
+
+            // Compute and fill the answer in the second input tensor.
+            dp(mi, ni) = fabsf(corrected_a)*corrected_b;
+        }
+    }
+}
+
+
+template <bool Is_dropout, typename Engine0, typename Layout0, typename Engine1, typename Layout1>
+__forceinline__ __device__
+void apply_powthree_backprop(
+    Tensor<Engine0, Layout0> &p,
+    Tensor<Engine1, Layout1> &dp, const float scale
+) {
+    // Unroll for each row.
+    #pragma unroll
+    for (int mi = 0; mi < size<0>(dp); ++mi) {
+        // Unroll for each column.
+        # pragma unroll
+        for (int ni = 0; ni < size<1>(dp); ++ni) {
+            // Compute the tri-conditional.
+            const float a = p(mi, ni);
+            const float b = dp(mi, ni);
+            const float corrected_b = !Is_dropout || a >= -100 ? b : 0.f;
+            const float corrected_a = a >= -100 ? a : 0.f;
+
+            // Compute and fill the answer in the second input tensor.
+            float val = corrected_a * scale;
+            dp(mi, ni) = scale * 3.f * val * val * corrected_b;
         }
     }
 }

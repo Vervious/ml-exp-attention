@@ -141,6 +141,8 @@ struct Flash_fwd_params : public Qkv_params {
 
     // Keeps track of the parameter for the sigmoid bias.
     float sigmoid_bias;
+
+    int activation_fn; // 0 for sigmoid, 1 for exp, 2 for plusminusexp, 3 for x**3, 4 for x**4, etc
 };
 
 ////////////////////////////////////////////////////////////////////////////////////////////////////

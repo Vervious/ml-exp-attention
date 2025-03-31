@@ -417,7 +417,11 @@ inline __device__ void compute_dq_dk_dv_1colblock(const Params &params, const in
 
     for (; m_block >= m_block_min; --m_block) {
         Tensor acc_s = partition_fragment_C(tiled_mma_sdp, Shape<Int<kBlockM>, Int<kBlockN>>{});  // (MMA=4, MMA_N, MMA_N)
-        fill(acc_s, sigmoid_bias_prescaled);
+        if (params.activation_fn == 2) {
+            fill(acc_s, 0.f);
+        } else {
+            fill(acc_s, sigmoid_bias_prescaled);            
+        }
         cute::cp_async_wait<0>();
         __syncthreads();
 
@@ -479,7 +483,26 @@ inline __device__ void compute_dq_dk_dv_1colblock(const Params &params, const in
 
         // if (cute::thread(32, 0)) { print(scores); }
         // Compute the sigmoid values.
-        flash::apply_exp(/*tensor=*/scores, /*scale=*/softmax_scale);
+        switch (params.activation_fn) {
+            case 0:
+                // Apply sigmoid
+                flash::apply_sigmoid(/*tensor=*/scores, /*scale=*/softmax_scale);
+                break;
+            case 1:
+                // Apply exp
+                flash::apply_exp(/*tensor=*/scores, /*scale=*/softmax_scale);
+                break;
+            case 2:
+                flash::apply_absexp(/*tensor=*/scores, /*scale=*/softmax_scale, /*bias=*/sigmoid_bias_prescaled);
+                break;
+            case 3:
+                break;
+            default:
+                // Default to sigmoid if not specified
+                flash::apply_sigmoid(/*tensor=*/scores, /*scale=*/softmax_scale);
+                break;
+        }
+
 
         if constexpr (Is_dropout) {
             int warp_id = tidx / 32;
@@ -528,7 +551,27 @@ inline __device__ void compute_dq_dk_dv_1colblock(const Params &params, const in
 
         // Reshape acc_dp from (MMA=4, MMA_N, MMA_N) to (col=(2, MMA_N), row=(2, MMA_N))
         Tensor dS = make_tensor(acc_dp.data(), scores.layout());
-        flash::apply_exp_backprop<Is_dropout>(/*p=*/scores, /*dp=*/dS);
+
+        switch (params.activation_fn) {
+            case 0:
+                // Apply sigmoid
+                flash::apply_sigmoid_backprop<Is_dropout>(/*p=*/scores, /*dp=*/dS);
+                break;
+            case 1:
+                // Apply exp
+                flash::apply_exp_backprop<Is_dropout>(/*p=*/scores, /*dp=*/dS);
+                break;
+            case 2:
+                flash::apply_absexp_backprop<Is_dropout>(/*p=*/scores, /*dp=*/dS);
+                break;
+            case 3:
+                flash::apply_powthree_backprop<Is_dropout>(/*p=*/scores, /*dp=*/dS, /*scale=*/softmax_scale);
+                break;
+            default:
+                // Default to sigmoid if not specified
+                flash::apply_sigmoid_backprop<Is_dropout>(/*p=*/scores, /*dp=*/dS);
+                break;
+        }
 
         // if (cute::thread0()) { print(dS); }
 
