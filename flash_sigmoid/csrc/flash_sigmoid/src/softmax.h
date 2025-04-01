@@ -201,12 +201,12 @@ __forceinline__ __device__
 void save_for_gelu_backprop(Tensor<Engine0, Layout0> &tensor, const float scale) {
     // gelu(x) = x * sigmoid(1.702 * x)
     // gelu'(x) = sigmoid(1.702 * x) + x * sigmoid'(1.702 * x) * 1.702
-    // dg/dx1 = sigmoid(1.702 * x). dg/dsigmoid() = x. dsigmoid()/dx = sigmoid'()*1.702. sigmoid'() = sigmoid() * (1 - sigmoid()).
+    // dg/dx1 = sigmoid(1.702 * x). dg/dsigmoid() = x. dsigmoid()/d1.702x = sigmoid'(). d1.702x/dx = 1.702. sigmoid'() = sigmoid() * (1 - sigmoid()).
     // final = a + x * a * (1-a) * 1.702
     // c stores sigmoid(1.702x)
     #pragma unroll
     for (int mi = 0; mi < size(tensor); ++mi) {
-        float c = fmaf(c, fast_tanhf(tensor(mi) * scale * 1.702f), c);
+        float c = fmaf(0.5, fast_tanhf(tensor(mi) * scale * 0.5f), 0.5f);
         tensor(mi) = c + tensor(mi) * c * (1 - c) * 1.702f;
     }
 }
