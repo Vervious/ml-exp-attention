@@ -426,7 +426,7 @@ void apply_gelu_backprop(
                 float c = fmaf(0.5f, fast_tanhf(a * scale * 0.851f), 0.5f);
                 // printf("tensor(%d) = %f, fast_tanhf = %f, c = %f\n", mi, tensor(mi), fast_tanhf(tensor(mi) * scale * 0.5f), c);
                 a = c + a * c * (1.f - c) * 1.702f;
-                p(mi, ni) = a * c;
+                p(mi, ni) = p(mi, ni) * c;
             }
 
             // Compute and fill the answer in the second input tensor.
