@@ -191,7 +191,13 @@ void apply_gelu(Tensor<Engine0, Layout0> &tensor, const float scale) {
     #pragma unroll
     for (int mi = 0; mi < size(tensor); ++mi) {
         float c = tensor(mi) * 0.5f;
+        if (c == -INFINITY) {
+            tensor(mi) = 0.0f;
+            continue;
+        }
+        // printf("tensor(%d) = %f, fast_tanhf = %f, c = %f\n", mi, tensor(mi), fast_tanhf(tensor(mi) * scale * 0.851f), c);
         tensor(mi) = fmaf(c, fast_tanhf(tensor(mi) * scale * 0.851f), c);
+        // printf("final tensor(%d) = %f\n", mi, tensor(mi));
     }
 }
 
@@ -206,8 +212,15 @@ void save_for_gelu_backprop(Tensor<Engine0, Layout0> &tensor, const float scale)
     // c stores sigmoid(1.702x)
     #pragma unroll
     for (int mi = 0; mi < size(tensor); ++mi) {
-        float c = fmaf(0.5, fast_tanhf(tensor(mi) * scale * 0.5f), 0.5f);
-        tensor(mi) = c + tensor(mi) * c * (1 - c) * 1.702f;
+        if (tensor(mi) == -INFINITY) {
+            tensor(mi) = 0.0f;
+            continue;
+        }
+        float c = fmaf(0.5f, fast_tanhf(tensor(mi) * scale * 0.851f), 0.5f);
+
+        // printf("tensor(%d) = %f, fast_tanhf = %f, c = %f\n", mi, tensor(mi), fast_tanhf(tensor(mi) * scale * 0.5f), c);
+        tensor(mi) = c + tensor(mi) * c * (1.f - c) * 1.702f;
+        // printf("final tensor(%d) = %f\n", mi, tensor(mi));
     }
 }
 
@@ -393,7 +406,7 @@ template <bool Is_dropout, typename Engine0, typename Layout0, typename Engine1,
 __forceinline__ __device__
 void apply_gelu_backprop(
     Tensor<Engine0, Layout0> &p,
-    Tensor<Engine1, Layout1> &dp
+    Tensor<Engine1, Layout1> &dp, const float scale
 ) {
     // Unroll for each row.
     #pragma unroll
@@ -402,12 +415,23 @@ void apply_gelu_backprop(
         # pragma unroll
         for (int ni = 0; ni < size<1>(dp); ++ni) {
             // Compute the tri-conditional.
-            const float a = p(mi, ni);
+            float a = p(mi, ni);
             const float b = dp(mi, ni);
-            const float corrected_b = !Is_dropout || a >= 0 ? b : 0.f;
+            const float corrected_b = !Is_dropout || a != -INFINITY ? b : 0.f;
+
+            if (a == -INFINITY) {
+                a = 0.0f;
+                p(mi, ni) = 0.0f;
+            } else {
+                float c = fmaf(0.5f, fast_tanhf(a * scale * 0.851f), 0.5f);
+                // printf("tensor(%d) = %f, fast_tanhf = %f, c = %f\n", mi, tensor(mi), fast_tanhf(tensor(mi) * scale * 0.5f), c);
+                a = c + a * c * (1.f - c) * 1.702f;
+                p(mi, ni) = a * c;
+            }
 
             // Compute and fill the answer in the second input tensor.
             dp(mi, ni) = a * corrected_b;
+            // printf("a = %f, b = %f, corrected_b = %f\n", a, b, corrected_b);
         }
     }
 }

@@ -498,7 +498,6 @@ inline __device__ void compute_dq_dk_dv_1colblock(const Params &params, const in
             case 3:
                 break;
             case 5:
-                flash::save_for_gelu_backprop(/*tensor=*/scores, /*scale=*/softmax_scale);
                 break;
             default:
                 // Default to sigmoid if not specified
@@ -507,29 +506,7 @@ inline __device__ void compute_dq_dk_dv_1colblock(const Params &params, const in
         }
 
 
-        if constexpr (Is_dropout) {
-            int warp_id = tidx / 32;
-            int block_row_idx = m_block * (kBlockM / 16) + warp_id % AtomLayoutMS;
-            // Need col to be multiples of 32, since we're doing dropout with block of 16 x 32
-            static_assert(MMA_N_SdP % 2 == 0);
-            int block_col_idx = n_block * (kBlockN / 32) + (warp_id / AtomLayoutMS) * (MMA_N_SdP / 2);
-            dropout.template apply_dropout</*encode_dropout_in_sign_bit=*/true>(
-                acc_s, block_row_idx, block_col_idx, AtomLayoutMS
-            );
-        }
-        // Convert scores from fp32 to fp16/bf16
-        Tensor rP = !Is_dropout
-            ? flash::convert_type<Element>(acc_s)
-            : flash::convert_type_relu<Element>(acc_s);
-        // Reshape rP from (MMA=4, MMA_M, MMA_N) to ((4, 2), MMA_N, MMA_N / 2)
-        // if using m16n8k16 or (4, MMA_N, MMA_N) if using m16n8k8.
-        Tensor tPrP = make_tensor(rP.data(), flash::convert_layout_acc_Aregs<Kernel_traits::TiledMmaSdP>(rP.layout()));
-        Tensor tPaP = smem_thr_copy_PdS.retile_S(tPrP);     // ((Atom,AtomNum), MMA_N, MMA_N)
-        cute::copy(smem_tiled_copy_PdS, tPaP, tPsP);
-        // if (cute::thread0()) { print(tPaP); }
-        // __syncthreads();
-        // if (cute::thread0()) { print(sP); }
-
+        // we compute dS first
         Tensor acc_dp = partition_fragment_C(tiled_mma_sdp, Shape<Int<kBlockM>, Int<kBlockN>>{});  // (MMA=4, MMA_N, MMA_N)
         CUTE_STATIC_ASSERT_V(size<0>(acc_dp) == size<0>(acc_s));                     // MMA
         CUTE_STATIC_ASSERT_V(size<1>(acc_dp) == size<1>(acc_s));                     // MMA
@@ -571,13 +548,38 @@ inline __device__ void compute_dq_dk_dv_1colblock(const Params &params, const in
                 flash::apply_powthree_backprop<Is_dropout>(/*p=*/scores, /*dp=*/dS, /*scale=*/softmax_scale);
                 break;
             case 5:
-                flash::apply_gelu_backprop<Is_dropout>(/*p=*/scores, /*dp=*/dS);
+                flash::apply_gelu_backprop<Is_dropout>(/*p=*/scores, /*dp=*/dS, /*scale=*/softmax_scale); // this should also fill in scores
                 break;
             default:
                 // Default to sigmoid if not specified
                 flash::apply_sigmoid_backprop<Is_dropout>(/*p=*/scores, /*dp=*/dS);
                 break;
         }
+
+
+        if constexpr (Is_dropout) {
+            int warp_id = tidx / 32;
+            int block_row_idx = m_block * (kBlockM / 16) + warp_id % AtomLayoutMS;
+            // Need col to be multiples of 32, since we're doing dropout with block of 16 x 32
+            static_assert(MMA_N_SdP % 2 == 0);
+            int block_col_idx = n_block * (kBlockN / 32) + (warp_id / AtomLayoutMS) * (MMA_N_SdP / 2);
+            dropout.template apply_dropout</*encode_dropout_in_sign_bit=*/true>(
+                acc_s, block_row_idx, block_col_idx, AtomLayoutMS
+            );
+        }
+        // Convert scores from fp32 to fp16/bf16
+        Tensor rP = !Is_dropout
+            ? flash::convert_type<Element>(acc_s)
+            : flash::convert_type_relu<Element>(acc_s);
+        // Reshape rP from (MMA=4, MMA_M, MMA_N) to ((4, 2), MMA_N, MMA_N / 2)
+        // if using m16n8k16 or (4, MMA_N, MMA_N) if using m16n8k8.
+        Tensor tPrP = make_tensor(rP.data(), flash::convert_layout_acc_Aregs<Kernel_traits::TiledMmaSdP>(rP.layout()));
+        Tensor tPaP = smem_thr_copy_PdS.retile_S(tPrP);     // ((Atom,AtomNum), MMA_N, MMA_N)
+        cute::copy(smem_tiled_copy_PdS, tPaP, tPsP);
+        // if (cute::thread0()) { print(tPaP); }
+        // __syncthreads();
+        // if (cute::thread0()) { print(sP); }
+
 
         // if (cute::thread0()) { print(dS); }
 
