@@ -327,6 +327,11 @@ inline __device__ void compute_attn_1rowblock(const Params &params, const int bi
             case 3:
                 flash::apply_powthree(/*tensor=*/acc_s, /*scale=*/softmax_scale);
                 break;
+            case 5:
+                flash::apply_gelu(/*tensor=*/acc_s, /*scale=*/softmax_scale);
+                break;
+            case 8:
+                break;
             default:
                 // Default to sigmoid if not specified
                 flash::apply_sigmoid(/*tensor=*/acc_s, /*scale=*/softmax_scale);
@@ -414,6 +419,9 @@ inline __device__ void compute_attn_1rowblock(const Params &params, const int bi
                 break;
             case 3:
                 flash::apply_powthree(/*tensor=*/acc_s, /*scale=*/softmax_scale);
+                break;
+            case 5:
+                flash::apply_gelu(/*tensor=*/acc_s, /*scale=*/softmax_scale);
                 break;
             default:
                 // Default to sigmoid if not specified

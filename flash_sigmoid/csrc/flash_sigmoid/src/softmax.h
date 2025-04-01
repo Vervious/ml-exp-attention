@@ -161,14 +161,15 @@ Notes--
 1. The relation between `softmax` and `sigmoid` is:
 `sigmoid(x) = 0.5*(1 + tanh(0.5*x))`. However, in our code, we take the
 factor of `0.5` from `0.5*x` and incorporate it in `scale` variable by
-pre-multiplying it.
+pre-multiplying it. (Ben I removed this, just because I want to preserve
+the scale for other activation fns)
 --------------------------------------------------------------------------------*/
 template <typename Engine0, typename Layout0>
 __forceinline__ __device__
 void apply_sigmoid(Tensor<Engine0, Layout0> &tensor, const float scale) {
     #pragma unroll
     for (int mi = 0; mi < size(tensor); ++mi) {
-        tensor(mi) = fmaf(0.5, fast_tanhf(tensor(mi) * scale), 0.5f);
+        tensor(mi) = fmaf(0.5, fast_tanhf(tensor(mi) * scale * 0.5f), 0.5f);
     }
 }
 
@@ -179,6 +180,34 @@ void apply_exp(Tensor<Engine0, Layout0> &tensor, const float scale) {
     #pragma unroll
     for (int mi = 0; mi < size(tensor); ++mi) {
         tensor(mi) = ben_expf(tensor(mi) * scale);
+    }
+}
+
+
+
+template <typename Engine0, typename Layout0>
+__forceinline__ __device__
+void apply_gelu(Tensor<Engine0, Layout0> &tensor, const float scale) {
+    #pragma unroll
+    for (int mi = 0; mi < size(tensor); ++mi) {
+        float c = tensor(mi) * 0.5f;
+        tensor(mi) = fmaf(c, fast_tanhf(tensor(mi) * scale * 1.702f), c);
+    }
+}
+
+
+template <typename Engine0, typename Layout0>
+__forceinline__ __device__
+void save_for_gelu_backprop(Tensor<Engine0, Layout0> &tensor, const float scale) {
+    // gelu(x) = x * sigmoid(1.702 * x)
+    // gelu'(x) = sigmoid(1.702 * x) + x * sigmoid'(1.702 * x) * 1.702
+    // dg/dx1 = sigmoid(1.702 * x). dg/dsigmoid() = x. dsigmoid()/dx = sigmoid'()*1.702. sigmoid'() = sigmoid() * (1 - sigmoid()).
+    // final = a + x * a * (1-a) * 1.702
+    // c stores sigmoid(1.702x)
+    #pragma unroll
+    for (int mi = 0; mi < size(tensor); ++mi) {
+        float c = fmaf(c, fast_tanhf(tensor(mi) * scale * 1.702f), c);
+        tensor(mi) = c + tensor(mi) * c * (1 - c) * 1.702f;
     }
 }
 
@@ -345,6 +374,40 @@ void apply_sigmoid_backprop(
                 /*a=*/a,
                 /*b=*/corrected_b
             );
+        }
+    }
+}
+
+
+
+/*--------------------------------------------------------------------------------
+Define a possibly more efficient implementation of passing gradients back
+from the outputs of the attention mechanism to its inputs.
+
+:param p: The tensor of output of sigmoid attention activations.
+:param dp: The tensor of gradient of loss with respect to sigmoid attention activations.
+
+:returns: Nothing. The `dp` is updated inplace with the answer.
+--------------------------------------------------------------------------------*/
+template <bool Is_dropout, typename Engine0, typename Layout0, typename Engine1, typename Layout1>
+__forceinline__ __device__
+void apply_gelu_backprop(
+    Tensor<Engine0, Layout0> &p,
+    Tensor<Engine1, Layout1> &dp
+) {
+    // Unroll for each row.
+    #pragma unroll
+    for (int mi = 0; mi < size<0>(dp); ++mi) {
+        // Unroll for each column.
+        # pragma unroll
+        for (int ni = 0; ni < size<1>(dp); ++ni) {
+            // Compute the tri-conditional.
+            const float a = p(mi, ni);
+            const float b = dp(mi, ni);
+            const float corrected_b = !Is_dropout || a >= 0 ? b : 0.f;
+
+            // Compute and fill the answer in the second input tensor.
+            dp(mi, ni) = a * corrected_b;
         }
     }
 }
