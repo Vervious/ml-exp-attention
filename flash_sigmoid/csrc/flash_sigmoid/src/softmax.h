@@ -191,7 +191,7 @@ void apply_gelu(Tensor<Engine0, Layout0> &tensor, const float scale) {
     #pragma unroll
     for (int mi = 0; mi < size(tensor); ++mi) {
         float c = tensor(mi) * 0.5f;
-        tensor(mi) = fmaf(c, fast_tanhf(tensor(mi) * scale * 1.702f), c);
+        tensor(mi) = fmaf(c, fast_tanhf(tensor(mi) * scale * 0.851f), c);
     }
 }
 
@@ -313,7 +313,7 @@ void apply_powthree_backprop(
 
             // Compute and fill the answer in the second input tensor.
             float val = corrected_a * scale;
-            dp(mi, ni) = scale * 3.f * val * val * corrected_b;
+            dp(mi, ni) = 3.f * val * val * corrected_b;
         }
     }
 }
