@@ -492,7 +492,8 @@ void apply_gaussian_pdf_backprop(
 
             // now, compute the derivative
             // Compute and fill the answer in the second input tensor.
-            dp(mi, ni) = -1 * a / (scale * scale) * p(mi, ni) * corrected_b;
+            // NOTE: for some reason an extra scale gets multiplied in later. I'm still looking for where (it shows up on all of the fns) but for now, hack scale**3 instead
+            dp(mi, ni) = -1 * a / (scale * scale * scale) * p(mi, ni) * corrected_b;
             // printf("a = %f, b = %f, corrected_b = %f\n", a, b, corrected_b);
         }
     }
