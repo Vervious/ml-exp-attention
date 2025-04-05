@@ -481,6 +481,7 @@ void apply_gaussian_pdf_backprop(
             if (a == -INFINITY) {
                 p(mi, ni) = 0.0f;
                 dp(mi, ni) = 0.0f;
+                continue;
             } else {
 
                 // first, compute the gaussian pdf
