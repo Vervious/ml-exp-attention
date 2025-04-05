@@ -331,6 +331,7 @@ inline __device__ void compute_attn_1rowblock(const Params &params, const int bi
                 flash::apply_gelu(/*tensor=*/acc_s, /*scale=*/softmax_scale);
                 break;
             case 8:
+                flash::apply_gaussian_pdf(/*tensor=*/acc_s, /*scale=*/softmax_scale);
                 break;
             default:
                 // Default to sigmoid if not specified
@@ -422,6 +423,9 @@ inline __device__ void compute_attn_1rowblock(const Params &params, const int bi
                 break;
             case 5:
                 flash::apply_gelu(/*tensor=*/acc_s, /*scale=*/softmax_scale);
+                break;
+            case 8:
+                flash::apply_gaussian_pdf(/*tensor=*/acc_s, /*scale=*/softmax_scale);
                 break;
             default:
                 // Default to sigmoid if not specified

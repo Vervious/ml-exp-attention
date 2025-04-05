@@ -499,6 +499,8 @@ inline __device__ void compute_dq_dk_dv_1colblock(const Params &params, const in
                 break;
             case 5:
                 break;
+            case 8:
+                break;
             default:
                 // Default to sigmoid if not specified
                 flash::apply_sigmoid(/*tensor=*/scores, /*scale=*/softmax_scale);
@@ -549,6 +551,9 @@ inline __device__ void compute_dq_dk_dv_1colblock(const Params &params, const in
                 break;
             case 5:
                 flash::apply_gelu_backprop<Is_dropout>(/*p=*/scores, /*dp=*/dS, /*scale=*/softmax_scale); // this should also fill in scores
+                break;
+            case 8:
+                flash::apply_gaussian_pdf_backprop<Is_dropout>(/*p=*/scores, /*dp=*/dS, /*scale=*/softmax_scale); // this should also fill in scores
                 break;
             default:
                 // Default to sigmoid if not specified

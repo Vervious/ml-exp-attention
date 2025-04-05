@@ -201,6 +201,22 @@ void apply_gelu(Tensor<Engine0, Layout0> &tensor, const float scale) {
     }
 }
 
+template <typename Engine0, typename Layout0>
+__forceinline__ __device__
+void apply_gaussian_pdf(Tensor<Engine0, Layout0> &tensor, const float scale) {
+    #pragma unroll
+    for (int mi = 0; mi < size(tensor); ++mi) {
+        float c = tensor(mi);
+        if (c == -INFINITY) {
+            tensor(mi) = 0.0f;
+            continue;
+        }
+        const float a = 0.3989f / scale; // 1 / sqrt(2 * pi) = 0.3989
+        c = -1 * c*c / (2 * scale * scale);
+        tensor(mi) = a * ben_expf(c);
+    }
+}
+
 
 template <typename Engine0, typename Layout0>
 __forceinline__ __device__
@@ -400,7 +416,7 @@ from the outputs of the attention mechanism to its inputs.
 :param p: The tensor of output of sigmoid attention activations.
 :param dp: The tensor of gradient of loss with respect to sigmoid attention activations.
 
-:returns: Nothing. The `dp` is updated inplace with the answer.
+:returns: Nothing. The `dp` and `p` is updated inplace with the answer.
 --------------------------------------------------------------------------------*/
 template <bool Is_dropout, typename Engine0, typename Layout0, typename Engine1, typename Layout1>
 __forceinline__ __device__
@@ -431,6 +447,51 @@ void apply_gelu_backprop(
 
             // Compute and fill the answer in the second input tensor.
             dp(mi, ni) = a * corrected_b;
+            // printf("a = %f, b = %f, corrected_b = %f\n", a, b, corrected_b);
+        }
+    }
+}
+
+
+/*--------------------------------------------------------------------------------
+backprop gaussian pdf. Also fills in p.
+
+:param p: The tensor of output of gaussian attention activations (not yet computed).
+:param dp: The tensor of gradient of loss with respect to gaussian attention activations.
+
+:returns: Nothing. The `dp` and `p` is updated inplace with the answer.
+--------------------------------------------------------------------------------*/
+template <bool Is_dropout, typename Engine0, typename Layout0, typename Engine1, typename Layout1>
+__forceinline__ __device__
+void apply_gaussian_pdf_backprop(
+    Tensor<Engine0, Layout0> &p,
+    Tensor<Engine1, Layout1> &dp, const float scale
+) {
+    // Unroll for each row.
+    #pragma unroll
+    for (int mi = 0; mi < size<0>(dp); ++mi) {
+        // Unroll for each column.
+        # pragma unroll
+        for (int ni = 0; ni < size<1>(dp); ++ni) {
+            // Compute the tri-conditional.
+            const float a = p(mi, ni);
+            const float b = dp(mi, ni);
+            const float corrected_b = !Is_dropout || a != -INFINITY ? b : 0.f;
+
+            if (a == -INFINITY) {
+                p(mi, ni) = 0.0f;
+                dp(mi, ni) = 0.0f;
+            } else {
+
+                // first, compute the gaussian pdf
+                const float c = 0.3989f / scale; // 1 / sqrt(2 * pi) = 0.3989
+                const float x = -1 * a*a / (2 * scale * scale);
+                p(mi, ni) = c * ben_expf(x);
+            }
+
+            // now, compute the derivative
+            // Compute and fill the answer in the second input tensor.
+            dp(mi, ni) = -1 * a / (scale * scale) * p(mi, ni) * corrected_b;
             // printf("a = %f, b = %f, corrected_b = %f\n", a, b, corrected_b);
         }
     }
